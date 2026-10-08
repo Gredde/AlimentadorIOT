@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#F4F6F8">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Alimentador IoT"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="#17324D"
+            android:layout_marginBottom="24dp" />
+
+        <LinearLayout
+            android:id="@+id/layoutLogin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Inicia sesión para acceder al alimentador."
+                android:textSize="16sp"
+                android:layout_marginBottom="16dp" />
+
+            <EditText
+                android:id="@+id/etCorreo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:hint="Correo electrónico"
+                android:inputType="textEmailAddress"
+                android:autofillHints="emailAddress"
+                android:maxLines="1" />
+
+            <EditText
+                android:id="@+id/etClave"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:hint="Contraseña"
+                android:inputType="textPassword"
+                android:autofillHints="password"
+                android:maxLines="1"
+                android:layout_marginTop="12dp" />
+
+            <Button
+                android:id="@+id/btnEntrar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Iniciar sesión"
+                android:layout_marginTop="20dp" />
+
+            <TextView
+                android:id="@+id/tvMensaje"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:textColor="#B3261E"
+                android:layout_marginTop="12dp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layoutPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvUsuario"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="16sp"
+                android:layout_marginBottom="20dp" />
+
+            <TextView
+                android:id="@+id/tvConexion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Sin conexión MQTT"
+                android:textSize="16sp"
+                android:layout_marginBottom="20dp" />
+
+            <TextView
+                android:id="@+id/tvNivel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Nivel de alimento: esperando datos"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvRaciones"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Raciones: esperando datos"
+                android:textSize="20sp"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/tvTrama"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Todavía no se recibió una medición"
+                android:textSize="14sp"
+                android:layout_marginTop="16dp" />
+            <TextView
+                android:id="@+id/tvBaseDatos"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Base de datos: esperando"
+                android:textSize="14sp"
+                android:layout_marginTop="20dp" />
+
+            <Button
+                android:id="@+id/btnDispensar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Dispensar una ración"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/tvOrden"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Sin órdenes enviadas"
+                android:accessibilityLiveRegion="polite"
+                android:textSize="16sp"
+                android:layout_marginTop="12dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Últimas mediciones"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:layout_marginTop="20dp" />
+
+            <TextView
+                android:id="@+id/tvHistorial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Sin mediciones guardadas"
+                android:textSize="16sp"
+                android:layout_marginTop="12dp" />
+
+            <Button
+                android:id="@+id/btnSalir"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cerrar sesión"
+                android:layout_marginTop="24dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

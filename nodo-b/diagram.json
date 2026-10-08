@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "author": "TI3042 Nodo B",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": -4.76, "attrs": {} },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": -156.8,
+      "left": 120.8,
+      "attrs": { "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 188.6,
+      "left": -220.8,
+      "attrs": { "color": "green", "label": "DISP" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn2",
+      "top": 265.4,
+      "left": -220.8,
+      "attrs": { "color": "yellow", "label": "RESET" }
+    },
+    { "type": "wokwi-led", "id": "led", "top": 198, "left": 157.4, "attrs": { "color": "green" } },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 272.75,
+      "left": 163.2,
+      "attrs": { "value": "220" }
+    }
+  ],
+   "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "lcd:VCC", "esp:5V", "red", [] ],
+    [ "lcd:GND", "esp:GND.1", "black", [] ],
+    [ "lcd:SDA", "esp:21", "green", [] ],
+    [ "lcd:SCL", "esp:22", "green", [] ],
+    [ "btn1:1.l", "esp:32", "blue", [] ],
+    [ "btn1:2.l", "esp:GND.2", "black", [] ],
+    [ "btn2:1.l", "esp:33", "blue", [] ],
+    [ "btn2:2.l", "esp:GND.2", "black", [] ],
+    [ "esp:26", "r1:1", "green", [] ],
+    [ "r1:2", "led:A", "green", [] ],
+    [ "led:C", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {},
+  "serialMonitor": {
+    "display": "always",
+    "collapse": false
+  }
+}

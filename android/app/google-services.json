@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "254867203154",
+    "project_id": "alimentadoriot-fb433",
+    "storage_bucket": "alimentadoriot-fb433.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:254867203154:android:fd97e2a62a8dbcb050eb8b",
+        "android_client_info": {
+          "package_name": "com.benjamin.alimentador_iot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-yHLXhZypnTquzI2gIN5c6OvOAhDipJI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
