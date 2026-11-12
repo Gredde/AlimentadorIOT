@@ -34,7 +34,7 @@
       "attrs": { "value": "220" }
     }
   ],
-   "connections": [
+  "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
     [ "lcd:VCC", "esp:5V", "red", [] ],
@@ -49,9 +49,6 @@
     [ "r1:2", "led:A", "green", [] ],
     [ "led:C", "esp:GND.1", "black", [] ]
   ],
-  "dependencies": {},
-  "serialMonitor": {
-    "display": "always",
-    "collapse": false
-  }
+  "serialMonitor": { "collapse": false, "display": "always" },
+  "dependencies": {}
 }

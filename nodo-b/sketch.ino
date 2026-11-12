@@ -1,6 +1,3 @@
-// TI3042 - Evaluacion 1 - Nodo B (interior)
-// Entradas: 2 pulsadores. Actuadores: LCD 16x2 I2C, LED.
-// Recibe telemetria y envia ordenes por WiFi via MQTT.
 
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -9,7 +6,6 @@
 #include <WiFiClientSecure.h>
 #include <time.h>
 
-// El prefijo debe ser IDENTICO al del nodo A.
 #define PREFIJO "inacap/ti3042/bs9c4d1e"
 #define T_TEL PREFIJO "/tel"
 #define T_CMD PREFIJO "/cmd"
@@ -19,7 +15,7 @@ const char *SSID_WIFI = "Wokwi-GUEST";
 const char *PASS_WIFI = "";
 const char *BROKER = "a076afc0.ala.us-east-1.emqxsl.com";
 const char *MQTT_USER = "nodo-b";
-const char *MQTT_PASS = "COLOQUE LA CONTRA AQUI";
+const char *MQTT_PASS = "CONFIGURAR_EN_LOCAL";
 
 const int PIN_DISP = 32, PIN_RESET = 33, PIN_LED = 26;
 
@@ -36,6 +32,19 @@ String origenB;
 bool esperandoAck = false;
 unsigned long seqPendiente = 0;
 
+const unsigned long RETRY_WIFI_MS = 10000UL;
+const unsigned long RETRY_MQTT_MS = 5000UL;
+unsigned long ultimoIntentoWiFi = 0;
+unsigned long ultimoIntentoMQTT = 0;
+bool wifiEstabaConectado = false;
+bool horaSolicitada = false;
+
+unsigned long duplicadas = 0;
+unsigned long antiguas = 0;
+unsigned long ultimoDato = 0;
+bool hayTelemetria = false;
+
+
 String campo(String t, int idx) {
   int ini = 0, n = 0;
   for (int i = 0; i <= (int)t.length(); i++) {
@@ -49,7 +58,11 @@ String campo(String t, int idx) {
 }
 
 void enviar(const char *cmd) {
-  if (!mqtt.connected() || esperandoAck) return;
+  if (!mqtt.connected() || esperandoAck) {
+    ultimoAck = mqtt.connected() ? "ESPERA" : "SIN_RED";
+    Serial.println("[ORDEN] No enviada: desconectado u orden pendiente");
+    return;
+  }
 
   seqTx++;
   String msg = origenB + "," + String(seqTx) + "," + cmd;
@@ -66,95 +79,149 @@ void enviar(const char *cmd) {
   }
 }
 
+bool esNumero(const String &valor);
+
 void onMsg(char *topic, byte *payload, unsigned int len) {
+  if (len == 0 || len > 160) return;
+
   String t;
+  t.reserve(len);
   for (unsigned int i = 0; i < len; i++) {
     t += (char)payload[i];
   }
 
-  if (String(topic) == T_TEL) {
+  String topico = String(topic);
+
+  if (topico == T_TEL) {
     if (campo(t, 0) != "A") return;
-
-    unsigned long seq = campo(t, 1).toInt();
-
-    // Si A reinicia su secuencia, comienza un nuevo conteo.
-    if (seq < seqRx) {
-      seqRx = 0;
-      recibidas = 0;
-      perdidas = 0;
+    int comas = 0;
+    for (unsigned int i = 0; i < t.length(); i++) {
+      if (t[i] == ',') comas++;
     }
+    if (comas != 4) return;
+    String seqTexto = campo(t, 1);
+    String nivelTexto = campo(t, 2);
+    String racionesTexto = campo(t, 3);
+    String maxTexto = campo(t, 4);
 
-    if (seqRx != 0 && seq > seqRx + 1) {
+    if (!esNumero(seqTexto) || !esNumero(nivelTexto) ||
+        !esNumero(racionesTexto) || !esNumero(maxTexto)) return;
+
+    unsigned long seq = strtoul(seqTexto.c_str(), nullptr, 10);
+    int nivelNuevo = nivelTexto.toInt();
+    int racionesNuevas = racionesTexto.toInt();
+    int maxNuevo = maxTexto.toInt();
+    if (seq == 0 || nivelNuevo < 0 || nivelNuevo > 100 ||
+        maxNuevo <= 0 || racionesNuevas < 0 ||
+        racionesNuevas > maxNuevo) return;
+
+    if (hayTelemetria && seq == seqRx) {
+      duplicadas++;
+      Serial.printf("[TEL] Duplicada, secuencia=%lu\\n", seq);
+      return;
+    }
+    if (hayTelemetria && seq < seqRx) {
+      antiguas++;
+      Serial.printf("[TEL] Historica, secuencia=%lu (ultima=%lu)\\n",
+                    seq, seqRx);
+      return;
+    }
+    if (hayTelemetria && seq > seqRx + 1) {
       perdidas += seq - seqRx - 1;
     }
 
     seqRx = seq;
+    hayTelemetria = true;
     recibidas++;
-    nivel = campo(t, 2).toInt();
-    raciones = campo(t, 3).toInt();
-    maxRaciones = campo(t, 4).toInt();
+    nivel = nivelNuevo;
+    raciones = racionesNuevas;
+    maxRaciones = maxNuevo;
+    ultimoDato = millis();
 
-  } else if (String(topic) == T_ACK) {
-    unsigned long seq = campo(t, 1).toInt();
-
-    // Solo acepta la confirmacion de su propia orden.
-    if (campo(t, 0) != "A") return;
-    if (campo(t, 3) != origenB) return;
+  } else if (topico == T_ACK) {
+    if (campo(t, 0) != "A" || campo(t, 3) != origenB) return;
+    String seqTexto = campo(t, 1);
+    if (!esNumero(seqTexto)) return;
+    unsigned long seq = strtoul(seqTexto.c_str(), nullptr, 10);
     if (!esperandoAck || seq != seqPendiente) return;
 
     latencia = millis() - tEnvio;
     ultimoAck = campo(t, 2);
     esperandoAck = false;
-
-    Serial.printf("[ACK] %s latencia=%lu ms\n",
+    Serial.printf("[ACK] %s latencia=%lu ms\\n",
                   ultimoAck.c_str(), latencia);
   }
 }
 
+bool esNumero(const String &valor) {
+  if (valor.length() == 0 || valor.length() > 10) return false;
+  for (unsigned int i = 0; i < valor.length(); i++) {
+    if (valor[i] < '0' || valor[i] > '9') return false;
+  }
+  return true;
+}
+
+// los intentos tls pueden bloquear brevemente el ciclo principal
 void conectar() {
+  unsigned long ahora = millis();
+
   if (WiFi.status() != WL_CONNECTED) {
-    lcd.setCursor(0, 0);
-    lcd.print("Conectando WiFi ");
-    Serial.print("[NET] WiFi");
-    WiFi.begin(SSID_WIFI, PASS_WIFI, 6);
-    while (WiFi.status() != WL_CONNECTED) { delay(200); Serial.print("."); }
-    Serial.printf("\n[NET] IP %s\n", WiFi.localIP().toString().c_str());
-  }
-  // La hora correcta permite comprobar la vigencia del certificado.
-if (time(nullptr) < 1700000000) {
-  Serial.println("[TLS] Sincronizando hora...");
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
+    digitalWrite(PIN_LED, LOW);
 
-  unsigned long inicioHora = millis();
-
-  while (time(nullptr) < 1700000000) {
-    delay(200);
-
-    if (millis() - inicioHora > 20000) {
-      Serial.println("[TLS] No se pudo sincronizar la hora");
-      return;
+    if (wifiEstabaConectado) {
+      Serial.println("[NET] WiFi perdido");
+      wifiEstabaConectado = false;
+      horaSolicitada = false;
     }
-  }
 
-  Serial.println("[TLS] Hora sincronizada");
-}
-  while (!mqtt.connected()) {
-    Serial.print("[MQTT] conectando... ");
-    if (mqtt.connect(
-      ("nodoB-" + String(random(9999))).c_str(),
-      MQTT_USER,
-      MQTT_PASS)) {
-      Serial.println("ok");
-      mqtt.subscribe(T_TEL);
-      mqtt.subscribe(T_ACK);
-    } else {
-      Serial.println("fallo");
-      delay(2000);
+    if (ultimoIntentoWiFi == 0 ||
+        ahora - ultimoIntentoWiFi >= RETRY_WIFI_MS) {
+      ultimoIntentoWiFi = ahora;
+      Serial.printf("[NET] Intentando WiFi, estado=%d\\n", WiFi.status());
+      WiFi.begin(SSID_WIFI, PASS_WIFI, 6);
     }
+    return;
   }
-  digitalWrite(PIN_LED, HIGH);
+
+  if (!wifiEstabaConectado) {
+    wifiEstabaConectado = true;
+    Serial.printf("[NET] IP %s\\n",
+                  WiFi.localIP().toString().c_str());
+  }
+
+  if (!horaSolicitada) {
+    horaSolicitada = true;
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
+    Serial.println("[TLS] Solicitando hora NTP...");
+  }
+
+  if (time(nullptr) < 1700000000) return;
+
+  if (mqtt.connected()) {
+    digitalWrite(PIN_LED, HIGH);
+    return;
+  }
+
+  digitalWrite(PIN_LED, LOW);
+  if (ultimoIntentoMQTT != 0 &&
+      ahora - ultimoIntentoMQTT < RETRY_MQTT_MS) return;
+
+  ultimoIntentoMQTT = ahora;
+  String clientId = "nodoB-" + String(esp_random(), HEX);
+  Serial.print("[MQTT] conectando... ");
+
+  if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+    bool suscritoTel = mqtt.subscribe(T_TEL);
+    bool suscritoAck = mqtt.subscribe(T_ACK);
+    Serial.printf("ok (tel=%d ack=%d)\\n",
+                  suscritoTel, suscritoAck);
+    digitalWrite(PIN_LED, HIGH);
+  } else {
+    Serial.printf("fallo, codigo=%d\\n", mqtt.state());
+  }
 }
 
+// certificado ca para verificar el broker mqtt
 const char *CA_CERT = R"EOF(-----BEGIN CERTIFICATE-----
 MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
@@ -194,12 +261,25 @@ void setup() {
   net.setCACert(CA_CERT);
   mqtt.setServer(BROKER, 8883);
   mqtt.setCallback(onMsg);
-  conectar();
+  mqtt.setSocketTimeout(3);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(SSID_WIFI, PASS_WIFI, 6);
+  ultimoIntentoWiFi = millis();
+  Serial.println("[SISTEMA] Nodo B iniciado");
+
 }
 
 void loop() {
-  if (!mqtt.connected()) { digitalWrite(PIN_LED, LOW); conectar(); }
-  mqtt.loop();
+  conectar();
+  if (mqtt.connected()) {
+    mqtt.loop();
+  } else if (esperandoAck) {
+    esperandoAck = false;
+    ultimoAck = "SIN_RED";
+    Serial.println("[ORDEN] Conectividad perdida; revisar antes de repetir");
+  }
+
 
 if (esperandoAck && millis() - tEnvio >= 8000) {
   esperandoAck = false;
@@ -207,7 +287,6 @@ if (esperandoAck && millis() - tEnvio >= 8000) {
   Serial.println("[ERR] Sin confirmacion del nodo A");
 }
 
-// Exige soltar ambos botones antes de otra pulsacion.
 static bool botonesArmados = true;
 
 bool dispPulsado = digitalRead(PIN_DISP) == LOW;
@@ -232,7 +311,13 @@ if (botonesArmados &&
 }
 
   char l1[17], l2[17];
-  snprintf(l1, 17, "Nivel %3d%% R%d/%d", nivel, raciones, maxRaciones);
+  if (!mqtt.connected()) {
+    snprintf(l1, 17, "MQTT SIN CONEXION");
+  } else if (!hayTelemetria || millis() - ultimoDato > 12000) {
+    snprintf(l1, 17, "Esperando Nodo A");
+  } else {
+    snprintf(l1, 17, "Nivel %3d%% R%d/%d", nivel, raciones, maxRaciones);
+  }
   snprintf(l2, 17, "P%lu %lums %s", perdidas, latencia, ultimoAck.c_str());
   lcd.setCursor(0, 0); lcd.print("                ");
   lcd.setCursor(0, 0); lcd.print(l1);

@@ -1,0 +1,12 @@
+# archivos generados
+.gradle/
+.idea/
+.kotlin/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+secrets.properties
+.env

@@ -23,7 +23,8 @@ import android.os.Handler
 import android.os.Looper
 
 class MainActivity : AppCompatActivity() {
-
+// debe permanecer en false fuera de las pruebas
+    private val SIMULAR_FALLO_FIREBASE = false
     private lateinit var auth: FirebaseAuth
     private lateinit var login: LinearLayout
     private lateinit var panel: LinearLayout
@@ -74,6 +75,11 @@ class MainActivity : AppCompatActivity() {
     private var ultimoGuardado = 0L
     private var guardando = false
 
+    private lateinit var colaLocal: MedicionesPendientes
+    private var sincronizando = false
+    private var conexionFirebase: DatabaseReference? = null
+    private var listenerConexion: ValueEventListener? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -93,6 +99,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         auth = FirebaseAuth.getInstance()
+        colaLocal = MedicionesPendientes(applicationContext)
 
         login = findViewById(R.id.layoutLogin)
         panel = findViewById(R.id.layoutPanel)
@@ -124,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnSalir).setOnClickListener {
+            detenerObservacionConexionFirebase()
             desconectarMqtt()
             detenerHistorial()
             historial.text = ""
@@ -183,6 +191,7 @@ class MainActivity : AppCompatActivity() {
             usuario.text = "Sesión: ${cuenta.email.orEmpty()}"
             conectarMqtt()
             escucharHistorial()
+            iniciarObservacionConexionFirebase()
         }
     }
 
@@ -329,7 +338,6 @@ class MainActivity : AppCompatActivity() {
                 override fun deliveryComplete(
                     token: IMqttDeliveryToken?
                 ) {
-                    // En esta etapa solamente recibimos datos.
                 }
             })
 
@@ -340,7 +348,7 @@ class MainActivity : AppCompatActivity() {
                 keepAliveInterval = 30
 
                 userName = "android"
-                password = "coloque la contra aqui".toCharArray()
+                password = "CONFIGURAR_EN_LOCAL".toCharArray()
 
                 isHttpsHostnameVerificationEnabled = true
             }
@@ -349,7 +357,6 @@ class MainActivity : AppCompatActivity() {
                 opciones, null,
                 object : IMqttActionListener {
                     override fun onSuccess(token: IMqttToken?) {
-                        // connectComplete realiza la suscripción.
                     }
 
                     override fun onFailure(
@@ -374,7 +381,6 @@ class MainActivity : AppCompatActivity() {
         val cliente = mqtt
         mqtt = null
 
-        // La desconexión se realiza fuera del hilo de la pantalla.
         Thread {
             try {
                 cliente?.disconnectForcibly()
@@ -394,36 +400,86 @@ class MainActivity : AppCompatActivity() {
     ) {
         val uid = auth.currentUser?.uid ?: return
         val ahora = SystemClock.elapsedRealtime()
-
-        // Guarda una medición cada 10 segundos por dispositivo.
-        if (guardando) return
         if (ultimoGuardado != 0L && ahora - ultimoGuardado < 10_000L) return
-
-        guardando = true
         ultimoGuardado = ahora
-        estadoBase.text = "Guardando medición..."
 
+        try {
+            colaLocal.agregar(uid, porcentaje, cantidad, maximo)
+            estadoBase.text = "Medición en cola local: ${colaLocal.cantidad(uid)} pendiente(s)"
+            sincronizarPendientes()
+        } catch (error: Exception) {
+            estadoBase.text = "Error de almacenamiento local: ${error.message}"
+        }
+    }
+
+    private fun iniciarObservacionConexionFirebase() {
+        detenerObservacionConexionFirebase()
+        val referencia = base.getReference(".info/connected")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.getValue(Boolean::class.java) == true) {
+                    sincronizarPendientes()
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                if (!isDestroyed) estadoBase.text = "Sin conexión a Firebase"
+            }
+        }
+        conexionFirebase = referencia
+        listenerConexion = listener
+        referencia.addValueEventListener(listener)
+    }
+
+    private fun detenerObservacionConexionFirebase() {
+        val listener = listenerConexion
+        if (listener != null) conexionFirebase?.removeEventListener(listener)
+        conexionFirebase = null
+        listenerConexion = null
+    }
+
+// los registros se eliminan de sqlite solo despues de confirmacion de firebase
+    private fun sincronizarPendientes() {
+        if (SIMULAR_FALLO_FIREBASE) {
+            val uid = auth.currentUser?.uid ?: return
+
+            estadoBase.text =
+                "MODO PRUEBA: ${colaLocal.cantidad(uid)} mediciones pendientes"
+
+            return
+        }
+        if (sincronizando) return
+        val uid = auth.currentUser?.uid ?: return
+        val siguiente = try {
+            colaLocal.obtener(uid, 1).firstOrNull()
+        } catch (error: Exception) {
+            estadoBase.text = "Error leyendo cola: ${error.message}"
+            return
+        } ?: run {
+            estadoBase.text = "Mediciones sincronizadas con Firebase"
+            return
+        }
+        sincronizando = true
         val registro = mapOf<String, Any>(
-            "nivel" to porcentaje,
-            "raciones" to cantidad,
-            "maxRaciones" to maximo,
-            "fecha" to ServerValue.TIMESTAMP
+            "nivel" to siguiente.nivel,
+            "raciones" to siguiente.raciones,
+            "maxRaciones" to siguiente.maxRaciones,
+            "fecha" to siguiente.fechaLocal
         )
-
-        base.getReference("usuarios")
-            .child(uid)
-            .child("mediciones")
-            .push()
-            .setValue(registro)
-            .addOnCompleteListener(this) { resultado ->
-                guardando = false
-
-                if (auth.currentUser?.uid == uid) {
-                    estadoBase.text = if (resultado.isSuccessful) {
-                        "Medición guardada en Firebase"
-                    } else {
-                        "Error al guardar: ${resultado.exception?.message}"
+        base.getReference("usuarios").child(uid).child("mediciones")
+            .child(siguiente.id).setValue(registro)
+            .addOnCompleteListener { tarea ->
+                sincronizando = false
+                if (tarea.isSuccessful) {
+                    try {
+                        colaLocal.eliminar(siguiente.id, uid)
+                    } catch (_: Exception) {
                     }
+                    if (!isDestroyed && auth.currentUser?.uid == uid) {
+                        estadoBase.text = "Sincronizando mediciones..."
+                        sincronizarPendientes()
+                    }
+                } else if (!isDestroyed && auth.currentUser?.uid == uid) {
+                    estadoBase.text = "Guardado local. Pendientes: ${colaLocal.cantidad(uid)}"
                 }
             }
     }
@@ -557,8 +613,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         temporizador.removeCallbacks(vencimientoOrden)
+        detenerObservacionConexionFirebase()
         detenerHistorial()
         desconectarMqtt()
+        if (::colaLocal.isInitialized) colaLocal.close()
         super.onDestroy()
     }
 }
